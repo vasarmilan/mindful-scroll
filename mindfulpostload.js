@@ -1,20 +1,37 @@
+const log = {
+    info: (...args) => {
+        console.log('[MS]', ...args);
+    },
+    error: (...args) => {
+        console.error('[MS]', ...args);
+    },
+};
+
+// this is needed to avoid hiding the feed items that are already hidden by the website
+const BLUESKY_HIDDEN_FEED_SELECTOR = '.r-hvic4v, [style*="display: none"]';
+
 // Global constant: List of selectors to hide
 const SELECTORS = {
     // notifications + user posts + any feed
-    'bsky.app': '[data-testid^="feedItem-by"]',
+    'bsky.app': `div:not(:has(.r-hvic4v *)) > div > div:is([data-testid*="FeedPage-feed"], [data-testid*="postsFeed"]) > div[data-testid*="-flatlist"] > div > div > div > div[data-testid]`,
     'linkedin.com': '.scaffold-finite-scroll__content > div > div[data-id^="urn:li:activity"]',
 };
 
 const POSTS_INCREMENT = 1;
 
+
 const getPostSelector = () => {
-    const host = window.location.host.replace(/^www\./, '');
+    const host = getHost();
     for (const knownHost of Object.keys(SELECTORS)) {
         if (host === knownHost) {
             return SELECTORS[knownHost];
         }
     }
     return null;
+}
+
+const getHost = () => {
+    return window.location.host.replace(/^www\./, '');
 }
 
 const isSupportedHost = () => {
@@ -24,24 +41,35 @@ const isSupportedHost = () => {
 // Global variable to set the number of records to display
 let maxRecordsToDisplay = 0;
 
-console.log('Script initialized');
+log.info('Script initialized');
+
+// get the feed items that are visible
+const getPotentialVisibleFeedItems = () => {
+    log.info('updateFeedDisplay called');
+    // Get all feed items that are not hidden by selectors
+    let allFeedItems = Array.from(document.querySelectorAll(getPostSelector()))
+        .filter(el => !el.dataset.hiddenBySelector)
+
+    // filter out hidden stuff on bluesky.app
+    if (getHost() === 'bsky.app') {
+        allFeedItems = allFeedItems.filter((el) => !el.closest(BLUESKY_HIDDEN_FEED_SELECTOR));
+    }
+
+    // filter out the items that are not visible due to something else
+    // const allFeedItemsVisible = allFeedItems.filter(el => window.getComputedStyle(el).display !== 'none');
+    const allFeedItemsVisible = allFeedItems;
+
+    return allFeedItemsVisible;
+}
 
 /**
  * Updates the feed to display up to 'maxRecordsToDisplay' items.
  */
 function updateFeedDisplay() {
-    console.log('updateFeedDisplay called');
-    // Get all feed items that are not hidden by selectors
-    const allFeedItems = Array.from(document.querySelectorAll(getPostSelector()))
-        .filter(el => !el.dataset.hiddenBySelector);
-
-    // filter out the items that are not visible due to something else
-    const allFeedItemsVisible = allFeedItems.filter(el => window.getComputedStyle(el).display !== 'none');
-
-    console.log('allFeedItems', allFeedItems.length, 'allFeedItemsVisible', allFeedItemsVisible.length);
+    const allFeedItemsVisible = getPotentialVisibleFeedItems();
 
     allFeedItemsVisible.forEach((el, index) => {
-        // console.log('Processing feed item', index, "maxRecordsToDisplay", maxRecordsToDisplay, "is visible", index < maxRecordsToDisplay);
+        // log.info('Processing feed item', index, "maxRecordsToDisplay", maxRecordsToDisplay, "is visible", index < maxRecordsToDisplay);
         if (index < maxRecordsToDisplay) {
             el.classList.remove('hidden-by-mindfulscroll');
             el.classList.add('visible-by-mindfulscroll');
@@ -54,8 +82,8 @@ function updateFeedDisplay() {
 /**
  * Creates and returns the 'Show More' button.
  */
-function getButton() {
-    console.log('Creating Show More button');
+function getCounterButton() {
+    log.info('Creating Show More button');
     const button = document.createElement('button');
     button.id = 'showMoreButton';
     button.textContent = 'Show More';
@@ -113,7 +141,7 @@ function getButton() {
         let shiftX = event.clientX - rect.left;
         let shiftY = event.clientY - rect.top;
 
-        console.log('shiftX', shiftX, 'shiftY', shiftY, 'rect', rect);
+        log.info('shiftX', shiftX, 'shiftY', shiftY, 'rect', rect);
 
         function moveAt(clientX, clientY) {
             button.style.top = clientY - shiftY + 'px';
@@ -154,20 +182,20 @@ function getButton() {
  * Adds or updates the 'Show More' button.
  */
 function addShowMoreButton() {
-    console.log('addShowMoreButton called');
+    log.info('addShowMoreButton called');
     const firstFeedItem = document.querySelector(getPostSelector());
 
     if (firstFeedItem) {
         // Check if the button already exists
         let button = document.getElementById('showMoreButton');
         if (!button) {
-            button = getButton();
+            button = getCounterButton();
             // Append the button to the body so it floats
             document.body.appendChild(button);
         }
         updateButtonText();
     } else {
-        console.log('No feed items found, setting up observer');
+        log.info('No feed items found, setting up observer');
         // No feed items found, set up an observer to wait for them
         waitForFeedItems();
     }
@@ -180,7 +208,7 @@ function waitForFeedItems() {
     const feedObserver = new MutationObserver((mutations, observer) => {
         const firstFeedItem = document.querySelector(getPostSelector());
         if (firstFeedItem) {
-            console.log('Feed items found, processing feed');
+            log.info('Feed items found, processing feed');
             // Feed items are now available, process the feed
             observer.disconnect(); // Stop observing
             processFeed();
@@ -195,7 +223,7 @@ function waitForFeedItems() {
  * Updates the button text to reflect the current 'maxRecordsToDisplay' value.
  */
 function updateButtonText() {
-    console.log('updateButtonText called');
+    log.info('updateButtonText called');
     const button = document.getElementById('showMoreButton');
     if (button) {
         button.textContent = `Show More (now: ${maxRecordsToDisplay})`;
@@ -206,7 +234,7 @@ function updateButtonText() {
  * Main function to process the feed.
  */
 function processFeed() {
-    console.log('processFeed called');
+    log.info('processFeed called');
     updateFeedDisplay();
     addShowMoreButton();
 }
@@ -216,10 +244,10 @@ function processFeed() {
  */
 function resetScript() {
     if (!isSupportedHost()) {
-        console.log('Unsupported host, exiting');
+        log.info('Unsupported host, exiting');
         return;
     }
-    console.log('resetScript called');
+    log.info('resetScript called');
     // Reset the maxRecordsToDisplay
     maxRecordsToDisplay = 0;
     // Clear any previous data attributes and classes
@@ -241,7 +269,7 @@ function resetScript() {
  * Injects the CSS class into the page.
  */
 function injectCSS() {
-    console.log('injectCSS called');
+    log.info('injectCSS called');
     const style = document.createElement('style');
     style.type = 'text/css';
     style.innerHTML = `
@@ -259,7 +287,7 @@ const observer = new MutationObserver(mutations => {
     // Check if new feed items are added or removed
     for (const mutation of mutations) {
         if (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0) {
-            console.log('DOM mutation detected, processing feed');
+            log.info('DOM mutation detected, processing feed');
             processFeed();
             break;
         }
@@ -269,10 +297,12 @@ const observer = new MutationObserver(mutations => {
 // Enhanced navigation detection
 function onNavigation() {
     if (!isSupportedHost()) {
-        console.log('Unsupported host, not doing anything');
+        log.info('Unsupported host, not doing anything');
         return;
     }
-    console.log('Navigation detected, resetting script in 500ms');
+    const host = window.location.host.replace(/^www\./, '');
+
+    log.info('Navigation detected, resetting script in 500ms');
     // setTimeout(resetScript, 500);
     resetScript();
 }
@@ -294,14 +324,14 @@ if (isSupportedHost()) {
 
         history.pushState = function() {
             const result = pushState.apply(history, arguments);
-            console.log('pushState called, resetting script');
+            log.info('pushState called, resetting script');
             onNavigation();
             return result;
         };
 
         history.replaceState = function() {
             const result = replaceState.apply(history, arguments);
-            console.log('replaceState called, resetting script');
+            log.info('replaceState called, resetting script');
             onNavigation();
             return result;
         };
@@ -311,7 +341,8 @@ if (isSupportedHost()) {
     const titleElement = document.querySelector('title');
     if (titleElement) {
         const titleObserver = new MutationObserver(() => {
-            console.log('Title change detected, resetting script');
+            log.info('Title change detected, resetting script');
+
             onNavigation();
         });
         titleObserver.observe(titleElement, { subtree: true, characterData: true, childList: true });
